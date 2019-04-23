@@ -3,6 +3,13 @@ import math
 import random
 from tkinter import *
 
+def readCsvFile(path):
+    # Returns a 2d list with the data in the given csv file
+    result = [ ]
+    for line in readFile(path).splitlines():
+        result.append(line.split(','))
+    return result
+
 def distance(x1, y1, x2, y2):
     #Distance formula
     return ((x2-x1)**2+(y2-y1)**2)**0.5
@@ -11,21 +18,31 @@ def magnitude(vector):
     #Find the magnitude of a vector
     return (vector[0]**2+vector[1]**2)**0.5
 
+
+## Sand, Wall, Variable, and Button Objects
 class Sand(object):
-    def __init__(self, value, cx, cy, r, dx, dy, angle, boing, gravity=1):
+    #Creates sand object with position and directional changes
+    def __init__(self, value, cx, cy, r, dx, dy, boing, gravity=2):
         self.value=value
         self.cx=cx
         self.cy=cy
         self.r=r
         self.dx=dx
         self.dy=dy
-        self.angle=angle
+        if dx==0:
+            self.angle=3*math.pi/2
+        else:
+            self.angle=math.atan(abs(self.dy)/abs(self.dx))
         self.boing=boing
+    def __str__(self):
+        return "%0.1f %0.1f" %(self.dx, self.dy)
     def draw(self, canvas):
         canvas.create_oval(self.cx-self.r, self.cy-self.r, self.cx+self.r, self.cy+self.r)
     def move(self):
         self.cx+=math.cos(math.radians(self.angle))*self.dx
         self.cy+=math.sin(math.radians(self.angle))*self.dy
+    def moveX(self):
+        self.cx+=math.cos(math.radians(self.angle))*self.dx
     def unmoveX(self):
         self.dx = - self.dx
         self.cx += math.cos(math.radians(self.angle))*self.dx
@@ -50,49 +67,30 @@ class Sand(object):
             return True
         else:
             return False
+    def updateAngle(self):
+        if self.dx==0:
+            self.angle=3*math.pi/2
+        else:
+            self.angle=math.atan(abs(self.dy)/abs(self.dx))
 
-'''
-#Code In Progress
-def init(data):
-    data.dx = 2
-    data.dy = random.randint(1,4)
-    data.isPaused = False
-    data.timerDelay = 10
-    data.gravity=1
-    data.angle=math.pi/2
-    
-    #Add a dampening effect
-    data.boing = 0.95
-    
-    #Add mouse attraction
-    data.attract = 0.05
-
-    #Create sand
-    data.sand=Sand(10, data.width/2, data.height/2, 10, data.dx, data.dy, data.angle, data.boing)
-    data.wall=Wall(data.width/10, data.height*19/20, data.width*8/10, data.height*19/20)
-    print(data.wall.angle)
-    
-def timerFired(data):
-    if (not data.isPaused):
-        doStep(data)
-
-def doStep(data):
-    data.sand.move()
-    if data.sand.collides(data.wall):
-        print('hi')
-        data.sand.angle=data.wall.angle-math.pi+data.sand.angle
-        data.sand.move()
-    if data.sand.cx<=0 or data.sand.cx>=data.width:
-        data.sand.unmoveX()
-    if data.sand.cy<=0 or data.sand.cy>=data.height:
-        data.sand.unmoveY()
-    data.sand.dy+=data.gravity
-
-def redrawAll(canvas, data):
-    # draw the ball
-    data.sand.draw(canvas)
-    data.wall.draw(canvas)
-'''
+class Wall(object):
+    #Create wall object represented as a line
+    def __init__(self, x1, y1, x2, y2):
+        self.x1=x1
+        self.y1=y1
+        self.x2=x2
+        self.y2=y2
+        #Calculate slope
+        if x1==x2:
+            self.slope=0
+        else: self.slope=-(y2-y1)/(x2-x1)
+        #Calculate angle
+        if x2-x1==0:
+            self.angle=3*math.pi/2
+        else:
+            self.angle=math.atan((y2-y1)/(x2-x1))
+    def draw(self, canvas):
+        canvas.create_line(self.x1, self.y1, self.x2, self.y2)
 
 class Variable(object):
     def __init__(self, name, cx, cy, width, height, value):
@@ -144,19 +142,17 @@ class VariableButton(Button):
         super().draw(canvas)
         canvas.create_text(self.cx, self.cy, text='%s: %0.2f'%(self.name, self.value))
 
-class Wall(object):
-    def __init__(self, x1, y1, x2, y2):
+class Valve(object):
+    def __init__(self, rate, x1, y1, x2, y2):
+        self.rate=rate
         self.x1=x1
         self.y1=y1
         self.x2=x2
         self.y2=y2
-        if x2-x1==0:
-            self.angle=3*math.pi/2
-        else:
-            self.angle=math.atan((y2-y1)/(x2-x1))
     def draw(self, canvas):
-        canvas.create_line(self.x1, self.y1, self.x2, self.y2)
+        pass
 
+## MVC
 def init(data):
     #initialize values
     data.interestRate=0.02
@@ -171,6 +167,13 @@ def init(data):
     #pausing
     data.isPaused=False
     data.buttonOn=False
+    #Create sand
+    data.dx = 1
+    data.dy = 5
+    data.timerDelay = 10
+    data.gravity=2
+    data.boing = 0.3
+    data.sand=Sand(10, 10, 10, 10, data.dx, data.dy, data.boing)
 
 def initializeWalls(data):
     #creates walls with amazing hard code
@@ -224,6 +227,32 @@ def initializeButtons(data):
     return [interestRateButton, taxRateButton, importRateButton, 
             exportRateButton, govSpendingButton]
 
+def timerFired(data):
+    if (not data.isPaused):
+        doStep(data)
+
+def doStep(data):
+    #Moves sand
+    data.sand.move()
+    data.sand.updateAngle()
+    for wall in data.walls:
+        if data.sand.collides(wall):
+            print(data.sand.dx, data.sand.dy, data.sand.cx, data.sand.cy)
+            if wall.slope==0:
+                data.sand.unmoveX()
+            else:
+                data.sand.cy=wall.slope*(data.sand.cx-wall.x1)-data.sand.r
+                data.sand.angle=(wall.angle-math.pi+data.sand.angle)
+                data.sand.angle%=(2*math.pi)
+                data.sand.unmoveY()
+                data.sand.moveX()
+            print(data.sand.dx, data.sand.dy, data.sand.cx, data.sand.cy)
+    if data.sand.cx-data.sand.r<=0 or data.sand.cx+data.sand.r>=data.width:
+        data.sand.unmoveX()
+    if data.sand.cy-data.sand.r<=0 or data.sand.cy+data.sand.r>=data.height:
+        data.sand.unmoveY()
+    data.sand.dy+=data.gravity
+
 def mousePressed(event, data):
     print(event.x, event.y)
     if data.isPaused==False:
@@ -237,8 +266,6 @@ def mousePressed(event, data):
 def keyPressed(event, data):
     pass
 
-def timerFired(data):
-    pass
 
 def drawButtonPage(canvas, data, name):
     pass
@@ -247,12 +274,10 @@ def redrawAll(canvas, data):
     for wall in data.walls:
         wall.draw(canvas)
     for button in data.buttons:
-        button.draw(canvas)    
-#################################################################
-# use the run function as-is
-#################################################################
+        button.draw(canvas) 
+    data.sand.draw(canvas)
 
-
+## Run Functions
 def runAnimation(width=1200, height=600):
     def redrawAllWrapper(canvas, data):
         canvas.delete(ALL)
