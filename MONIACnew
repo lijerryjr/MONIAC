@@ -59,8 +59,12 @@ class Sand(object):
         self.dy *= self.boing
     def collides(self, other):
         #Check if sand collides with a wall
-        if (other.x1>self.cx+self.r or other.x2<self.cx-self.r or 
-            other.y1>self.cy+self.r or other.y2<self.cy-self.r):
+        smallX=min([other.x1, other.x2])
+        largeX=max([other.x1, other.x2])
+        smallY=min([other.y1, other.y2])
+        largeY=max([other.y1, other.y2])
+        if (smallX>self.cx+self.r or largeX<self.cx-self.r or 
+            smallY>self.cy+self.r or largeY<self.cy-self.r):
             #Edge case
             return False
         #Use vectors to calculate angle and height to check distance
@@ -132,6 +136,16 @@ class VariableButton(Button):
     def draw(self, canvas):
         super().draw(canvas)
         canvas.create_text(self.cx, self.cy, text='%s: %0.2f'%(self.name, self.value))
+    def drawPage(self, canvas, datax, datay, curInput):
+        canvas.create_text(datax/2, datay/2, text='Input New %s'%(self.name))
+        canvas.create_text(datax/2, datay*6/11, text=curInput)
+    def drawPageAgain(self, canvas, datax, datay, curInput):
+        canvas.create_text(datax/2, datay*5/11, text="Try again")
+        canvas.create_text(datax/2, datay/2, text='Input New %s'%(self.name))
+        canvas.create_text(datax/2, datay*6/11, text=curInput)
+    def updateValue(self, input):
+        assert(0<=float(input)<=1)
+        self.value=float(input)
 
 class Valve(object):
     def __init__(self, rate, x1, y1, x2, y2):
@@ -157,12 +171,54 @@ class Valve(object):
         for row in range(len(ballGrid)):
             for col in range(len(ballGrid[row])):
                 if ballGrid[row][col]!=None:
-                    sand=Sand(10, startX*(col+1), startY*(row+1), r, dx, dy, boing)
+                    sand=Sand(10, startX+r*2*col, startY+r*(2*row+1), r, dx, dy, boing)
                     sandL.append(sand)
         self.value-=ballsReleased*10
         return sandL
     def collides(self, cy, cx, r):
         return cy+r>=self.y1 and cy-r<=self.y2 and cx-r<=self.x2 and cx+r>=self.x1
+
+class SumValve(Valve):
+    def __init__(self, rate, x1, y1, x2, y2, spendingRate):
+        super().__init__(rate, x1, y1, x2, y2)
+        self.spendingRate=spendingRate
+    def releaseBalls(self, r, dx, dy, boing):
+        ballsReleased1=roundUp(self.value*(1-self.rate)/10*self.spendingRate)
+        ballsReleased2=int(self.value*self.rate/10*self.spendingRate)
+        sandL=[]
+        ballGrid1=createSandGrid(10, ballsReleased1)
+        ballGrid2=createSandGrid(10, ballsReleased2)
+        startX1=self.x1+(self.x2-self.x1)/4
+        startX2=self.x1+(self.x2-self.x1)*2/3
+        startY=self.y2
+        for row in range(len(ballGrid1)):
+            for col in range(len(ballGrid1[row])):
+                if ballGrid1[row][col]!=None:
+                    sand=Sand(10, startX1+r*2*col, startY+r*(2*row+1), r, -dx, dy, boing)
+                    sandL.append(sand)
+        for row in range(len(ballGrid2)):
+            for col in range(len(ballGrid2[row])):
+                if ballGrid2[row][col]!=None:
+                    sand=Sand(10, startX2+r*2*col, startY+r*(2*row+1), r, dx, dy, boing)
+                    sandL.append(sand)
+        self.value-=(ballsReleased1+ballsReleased2)*10
+        return sandL
+
+
+class HorizontalValve(Valve):
+    def releaseBalls(self, r, dx, dy, boing):
+        ballsReleased=roundUp(self.value/10*self.rate)
+        sandL=[]
+        ballGrid=createSandGrid(3, ballsReleased)
+        startX=self.x1-r
+        startY=(self.y1+self.y2)/2
+        for row in range(len(ballGrid)):
+            for col in range(len(ballGrid[row])):
+                if ballGrid[row][col]!=None:
+                    sand=Sand(10, startX-r*2*col, startY+r*(2*row+1), r, -abs(dx), dy, boing)
+                    sandL.append(sand)
+        self.value-=ballsReleased*10
+        return sandL
 
 ## MVC
 def init(data):
@@ -171,9 +227,10 @@ def init(data):
     data.interestRate=0.02
     data.lendingRate=0.5
     data.taxRate=0.05
-    data.importRate=0.1
+    data.importRate=0.5
     data.exportRate=0.5
     data.govSpendingRate=0.5
+    data.spendingRate=0.5
     
     #initialize background objects
     data.newX=data.width*2/3
@@ -184,6 +241,10 @@ def init(data):
     #pausing
     data.isPaused=False
     data.buttonOn=False
+    data.clickedButton=None
+    data.buttonInput=''
+    data.drawAgain=False
+    
     data.timerDelay = 10
 
     #initialize sand
@@ -191,8 +252,9 @@ def init(data):
     data.dy = 1
     data.gravity=2
     data.boing = 0.3
+    data.xboing=0.7
     data.radius=3
-    data.sand=initializeGovSand(data)+initializeSavingSand(data)+initializeConSand(data)
+    data.sand=initializeConSand(data)+initializeSavingSand(data)+initializeGovSand(data)
 
 def initializeGovSand(data):
     sandL=[]
@@ -223,7 +285,7 @@ def initializeConSand(data):
 def initializeSavingSand(data):
     sandL=[]
     savingGrid=createSandGrid(4, int(data.GDP*data.interestRate))
-    startX=data.newX*2/3
+    startX=data.newX*7/10
     startY=data.newX/20
     for row in range(len(savingGrid)):
         for col in range(len(savingGrid[row])):
@@ -248,9 +310,10 @@ def initializeValves(data):
     #Creates valves
     govValve=Valve(data.govSpendingRate, 0, data.height/3, data.newX/6, data.height*4/9)
     bankValve=Valve(data.lendingRate, data.newX*5/6, data.height*7/18, data.newX, data.height/2)
-    foreignValve=Valve(data.exportRate, data.newX*3/4, data.height*14/18*11/10,
+    foreignValve=HorizontalValve(data.exportRate, data.newX*3/4, data.height*14/18*11/10,
                        data.newX*17/18, data.height*14/18*11/10*16/15)
-    spendingValve=Valve(data.importRate, data.newX/3, data.height/2, data.newX*2/3, data.height*12/18)
+    spendingValve=SumValve(data.importRate, data.newX/3, data.height/2, 
+                           data.newX*2/3, data.height*12/18, data.spendingRate)
     return [govValve, bankValve, foreignValve, spendingValve]
 
 def initializeWalls(data):
@@ -272,7 +335,7 @@ def initializeWalls(data):
     wall10=Wall(data.newX*5/6, data.height/2, data.newX*2/3, data.height*5/9)
     #I triangle
     wall11=Wall(data.newX*2/3, data.height*12/18, data.newX*17/18, data.height*31/54)
-    wall12=Wall(data.newX*2/3, data.height*12/18, data.newX*17/18, data.height*15/18)
+    wall12=Wall(data.newX*17/18, data.height*15/18, data.newX*2/3, data.height*12/18)
     wall13=Wall(data.newX*17/18, data.height/2, data.newX*17/18, data.height*14/18*11/10*16/15)
     #MX triangle
     wall14=Wall(data.newX/2, data.height*113/180*11/10, data.newX/2, data.height*8/9)
@@ -291,6 +354,7 @@ def initializeButtons(data):
     bWidth=data.width/15
     bHeight=data.height/25
     xPos=data.width*8/9
+    pauseButton=Button("Pause Button", xPos, data.height*3/11, bWidth, bHeight)
     interestRateButton=VariableButton("Interest Rt", xPos, data.height*6/11,
                               bWidth, bHeight, data.interestRate)
     taxRateButton=VariableButton("Tax Rt", xPos, data.height*7/11, bWidth,
@@ -302,7 +366,7 @@ def initializeButtons(data):
     govSpendingButton=VariableButton("Gov. Spending Rt", xPos,
                              data.height*10/11, bWidth, bHeight, 
                              data.govSpendingRate)
-    return [interestRateButton, taxRateButton, importRateButton, 
+    return [pauseButton, interestRateButton, taxRateButton, importRateButton, 
             exportRateButton, govSpendingButton]
 
 def timerFired(data):
@@ -338,9 +402,19 @@ def newDoStep(data):
                     data.sand[i].angle%=(2*math.pi)
                     
                     #modify dx
-                    if data.sand[i].dy>0:
+                    if data.sand[i].dx==0:
                         if (0<data.sand[i].angle<math.pi/2 or 
                             math.pi<data.sand[i].angle<3*math.pi/2):
+                            data.sand[i].dx=1
+                        else:
+                            data.sand[i].dx=-1
+                    else:
+                        data.sand[i].dx/=data.xboing
+                    '''
+                    if data.sand[i].dy<0:
+                        if (0<data.sand[i].angle<math.pi/2 or 
+                            math.pi<data.sand[i].angle<3*math.pi/2):
+                            print(1)
                             if data.sand[i].dx==0:
                                 data.sand[i].dx=1
                             elif data.sand[i].dx>0:
@@ -348,8 +422,9 @@ def newDoStep(data):
                             else:
                                 data.sand[i].dx/=data.boing
                         else:
+                            print(2)
                             if data.sand[i].dx==0:
-                                data.sand[i].dx=-1
+                                data.sand[i].dx=1
                             elif data.sand[i].dx>0:
                                 data.sand[i].dx/=data.boing
                             else:
@@ -357,6 +432,7 @@ def newDoStep(data):
                     else:
                         if (0<data.sand[i].angle<math.pi/2 or 
                             math.pi<data.sand[i].angle<3*math.pi/2):
+                            print(3)
                             if data.sand[i].dx==0:
                                 data.sand[i].dx=1
                             elif data.sand[i].dx>0:
@@ -364,20 +440,21 @@ def newDoStep(data):
                             else:
                                 data.sand[i].dx*=data.boing
                         else:
+                            print(4)
                             if data.sand[i].dx==0:
                                 data.sand[i].dx=-1
                             elif data.sand[i].dx>0:
                                 data.sand[i].dx*=data.boing
                             else:
                                 data.sand[i].dx*=-data.boing
-                    
+                    '''
                     #move
                     data.sand[i].unmoveY()
                     data.sand[i].moveX()
                     
                 #stop moving
                 if abs(data.sand[i].dy)<2:
-                    data.sand[i].dx=0
+                    data.sand[i].dx*=data.xboing
         
         #boundary bouncing
         if data.sand[i].cx-data.sand[i].r<=0 or data.sand[i].cx+data.sand[i].r>=data.width:
@@ -396,7 +473,6 @@ def newDoStep(data):
         collided=False
         for valve in data.valves:
             if valve.collides(data.sand[i].cy, data.sand[i].cx, data.sand[i].r):
-                print()
                 valve.value+=data.sand[i].value
                 data.sand.pop(i)
                 collided=True
@@ -406,35 +482,59 @@ def newDoStep(data):
 
 def releaseValves(data):
     for valve in data.valves:
-        data.sand.extend(valve.releaseBalls(data.radius, 0, 1, data.boing))
+        data.sand.extend(valve.releaseBalls(data.radius, 0.5, 1, data.boing))
 
 def mousePressed(event, data):
-    print(event.x, event.y)
-    if data.isPaused==False:
+    #mouse and button interactions will mainly be here
+    if data.clickedButton==None:
         for button in data.buttons:
             if button.isClicked(event.x, event.y):
                 button.clicked=True
+                data.isPaused=not data.isPaused
+                data.clickedButton=button
+                break
             else:
                 button.clicked=False
-            print(button.clicked)
-            data.isPaused=True
+        if not data.isPaused:
+            data.clickedButton=None
     
+    
+    ##
 def keyPressed(event, data):
-    pass
+    if data.clickedButton!=None:
+        if event.keysym=="Return":
+            try:
+                data.clickedButton.updateValue(data.buttonInput)
+                data.clickedButton=None
+                data.isPaused=False
+                data.buttonInput=''
+                data.drawAgain=False
+            except:
+                data.drawAgain=True
+                data.buttonInput=''
+        else:
+            data.buttonInput+=str(event.char)
 
 def drawButtonPage(canvas, data, name):
     pass
 
 def redrawAll(canvas, data):
-    for wall in data.walls:
-        wall.draw(canvas)
-    for button in data.buttons:
-        button.draw(canvas) 
-    #data.sand.draw(canvas)
-    for valve in data.valves:
-        valve.draw(canvas)
-    for sand in data.sand:
-        sand.draw(canvas)
+    if data.clickedButton==None:
+        for wall in data.walls:
+            wall.draw(canvas)
+        for button in data.buttons:
+            button.draw(canvas) 
+        #data.sand.draw(canvas)
+        for valve in data.valves:
+            valve.draw(canvas)
+        for sand in data.sand:
+            sand.draw(canvas)
+    else:
+        if data.drawAgain:
+            print(4)
+            data.clickedButton.drawPageAgain(canvas, data.width, data.height, data.buttonInput)
+        else:
+            data.clickedButton.drawPage(canvas, data.width, data.height, data.buttonInput)
 
 ## Run Functions
 def runAnimation(width=1200, height=600):
