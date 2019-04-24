@@ -18,6 +18,12 @@ def magnitude(vector):
     #Find the magnitude of a vector
     return (vector[0]**2+vector[1]**2)**0.5
 
+def roundUp(x):
+    if x%1==0:
+        return int(x)
+    else:
+        return int(x)+1
+
 
 ## Sand, Wall, Variable, and Button Objects
 class Sand(object):
@@ -72,7 +78,15 @@ class Sand(object):
             self.angle=3*math.pi/2
         else:
             self.angle=math.atan(abs(self.dy)/abs(self.dx))
-
+    '''
+    def __eq__(self, other):
+        return (isinstance(other, Sand) and self.cx==other.cx and 
+                self.cy==other.cy and self.dx==other.dx and self.dy==other.dy
+                and self.angle==other.angle)
+    def __hash__(self):
+        return hash(self.cx)
+    '''
+    
 class Wall(object):
     #Create wall object represented as a line
     def __init__(self, x1, y1, x2, y2):
@@ -121,7 +135,7 @@ class VariableButton(Button):
 
 class Valve(object):
     def __init__(self, rate, x1, y1, x2, y2):
-        self.rate=rate/100
+        self.rate=rate
         self.x1=x1
         self.y1=y1
         self.x2=x2
@@ -134,29 +148,30 @@ class Valve(object):
         y2=self.y2
         canvas.create_rectangle(x1, y1, x2, y2, fill='green')
         canvas.create_text((x1+x2)/2, (y1+y2)/2, text=self.value)
-    def releaseBalls(self, r, cx, cy, boing):
-        ballsReleased=self.value%3
+    def releaseBalls(self, r, dx, dy, boing):
+        ballsReleased=roundUp(self.value/10*self.rate)
         sandL=[]
-        ballGrid=createSandGrid(3, self.value)
+        ballGrid=createSandGrid(3, ballsReleased)
         startX=(self.x1+self.x2)/2
         startY=self.y2
         for row in range(len(ballGrid)):
             for col in range(len(ballGrid[row])):
                 if ballGrid[row][col]!=None:
-                    sand=Sand(10, startX*(col+1), startY*(row+1), r, cx, cy, boing)
+                    sand=Sand(10, startX*(col+1), startY*(row+1), r, dx, dy, boing)
                     sandL.append(sand)
+        self.value-=ballsReleased*10
         return sandL
-    def collides(self, cy, r):
-        return cy+r>=self.y1
+    def collides(self, cy, cx, r):
+        return cy+r>=self.y1 and cy-r<=self.y2 and cx-r<=self.x2 and cx+r>=self.x1
 
 ## MVC
 def init(data):
     #initialize macroeconomic variables
-    data.GDP=100
+    data.GDP=500
     data.interestRate=0.02
     data.lendingRate=0.5
     data.taxRate=0.05
-    data.importRate=0.5
+    data.importRate=0.1
     data.exportRate=0.5
     data.govSpendingRate=0.5
     
@@ -172,14 +187,12 @@ def init(data):
     data.timerDelay = 10
 
     #initialize sand
-    data.dx = -1
+    data.dx = 0.5
     data.dy = 1
     data.gravity=2
     data.boing = 0.3
-    data.radius=10
-    data.govSand=initializeGovSand(data)
-    data.sand=Sand(10, 10, 10, data.radius, data.dx, data.dy, data.boing)
-    
+    data.radius=3
+    data.sand=initializeGovSand(data)+initializeSavingSand(data)+initializeConSand(data)
 
 def initializeGovSand(data):
     sandL=[]
@@ -189,24 +202,46 @@ def initializeGovSand(data):
     for row in range(len(govGrid)):
         for col in range(len(govGrid[row])):
             if govGrid[row][col]!=None:
-                sand=Sand(10, startX*(col+1), startY*(row+1), data.radius, 
+                sand=Sand(10, startX+data.radius*2*col, startY+data.radius*2*row, data.radius, 
                           data.dx, data.dy, data.boing)
                 sandL.append(sand)
     return sandL
 
 def initializeConSand(data):
-    consumptionGrid=createSandGrid(16, data.GDP*(1-data.taxRate-data.interestRate))
-    pass
+    sandL=[]
+    consumptionGrid=createSandGrid(16, int(data.GDP*(1-data.taxRate-data.interestRate)))
+    startX=data.newX*2/5
+    startY=data.newX/20
+    for row in range(len(consumptionGrid)):
+        for col in range(len(consumptionGrid[row])):
+            if consumptionGrid[row][col]!=None:
+                sand=Sand(10, startX+data.radius*2*col, startY+data.radius*2*row, data.radius, 
+                          data.dx, data.dy, data.boing)
+                sandL.append(sand)
+    return sandL
     
 def initializeSavingSand(data):
-    savingGrid=createSandGrid(8, data.GDP*data.interestRate)
-    pass
+    sandL=[]
+    savingGrid=createSandGrid(4, int(data.GDP*data.interestRate))
+    startX=data.newX*2/3
+    startY=data.newX/20
+    for row in range(len(savingGrid)):
+        for col in range(len(savingGrid[row])):
+            if savingGrid[row][col]!=None:
+                sand=Sand(10, startX+data.radius*2*col, startY+data.radius*2*row, data.radius, 
+                          data.dx, data.dy, data.boing)
+                sandL.append(sand)
+    return sandL
 
 def createSandGrid(cols, balls):
     L=[]
     while balls>0:
-        L.extend([[0]*(balls%cols)+[None]*(cols-balls%cols)])
-        balls-=balls%cols
+        if balls>=cols:
+            L.extend([[0]*(cols)])
+            balls-=cols
+        else:
+            L.extend([[0]*(balls%cols)+[None]*(cols-balls%cols)])
+            balls-=balls%cols
     return L
 
 def initializeValves(data):
@@ -215,7 +250,8 @@ def initializeValves(data):
     bankValve=Valve(data.lendingRate, data.newX*5/6, data.height*7/18, data.newX, data.height/2)
     foreignValve=Valve(data.exportRate, data.newX*3/4, data.height*14/18*11/10,
                        data.newX*17/18, data.height*14/18*11/10*16/15)
-    return [govValve, bankValve, foreignValve]
+    spendingValve=Valve(data.importRate, data.newX/3, data.height/2, data.newX*2/3, data.height*12/18)
+    return [govValve, bankValve, foreignValve, spendingValve]
 
 def initializeWalls(data):
     #creates walls with amazing hard code
@@ -223,7 +259,7 @@ def initializeWalls(data):
     wall0=Wall(data.newX, 0, data.newX, data.height)
     #G trapezoid
     wall1=Wall(data.newX/3, data.height/18, data.newX/3, data.height/2)
-    wall2=Wall(data.newX/3, data.height/9, data.newX/6, data.height/3)
+    wall2=Wall(data.newX/6, data.height/3, data.newX/3, data.height/9)
     wall3=Wall(data.newX/6, data.height/3, data.newX/6, data.height*4/9)
     wall4=Wall(data.newX/6, data.height*4/9, data.newX/3, data.height/2)
     #G bottom
@@ -271,58 +307,106 @@ def initializeButtons(data):
 
 def timerFired(data):
     if (not data.isPaused):
-        #doStep(data)
         newDoStep(data)
+        releaseValves(data)
 
 def newDoStep(data):
-    for sand in data.govSand:
-        sand.move()
-        sand.updateAngle()
+    i=0
+    while i<(len(data.sand)):
+        data.sand[i].move()
+        data.sand[i].updateAngle()
         #wall collisions and bouncing
         for wall in data.walls:
-            if sand.collides(wall):
+            if data.sand[i].collides(wall):
                 if wall.slope==0:
                     #reverse x if collides with vertical wall
-                    if sand.dx>0:
-                        sand.cx=wall.x1-sand.r
+                    if data.sand[i].dx>0:
+                        data.sand[i].cx=wall.x1-data.sand[i].r
                     else:
-                        sand.cx=wall.x1+sand.r
-                    sand.unmoveX()
+                        data.sand[i].cx=wall.x1+data.sand[i].r
+                    data.sand[i].unmoveX()
                 else:
                     #set height to line and reverse dy
-                    sand.cy=wall.slope*(sand.cx-wall.x1)+wall.y1
-                    if sand.dy<0:
-                        sand.cy+=sand.r
+                    data.sand[i].cy=wall.slope*(data.sand[i].cx-wall.x1)+wall.y1
+                    if data.sand[i].dy<0:
+                        data.sand[i].cy+=data.sand[i].r
                     else:
-                        sand.cy-=sand.r
-                    #sand.dx/=data.boing/1.5
-                    sand.unmoveY()
-                    sand.moveX()
-                    sand.angle=(wall.angle-math.pi+sand.angle)
-                    sand.angle%=(2*math.pi)
-                #stop dy
-                if abs(sand.dy)<2:
-                    sand.dx=0
+                        data.sand[i].cy-=data.sand[i].r
+                    
+                    #modify angle
+                    data.sand[i].angle=(wall.angle-math.pi+data.sand[i].angle)
+                    data.sand[i].angle%=(2*math.pi)
+                    
+                    #modify dx
+                    if data.sand[i].dy>0:
+                        if (0<data.sand[i].angle<math.pi/2 or 
+                            math.pi<data.sand[i].angle<3*math.pi/2):
+                            if data.sand[i].dx==0:
+                                data.sand[i].dx=1
+                            elif data.sand[i].dx>0:
+                                data.sand[i].dx/=-data.boing
+                            else:
+                                data.sand[i].dx/=data.boing
+                        else:
+                            if data.sand[i].dx==0:
+                                data.sand[i].dx=-1
+                            elif data.sand[i].dx>0:
+                                data.sand[i].dx/=data.boing
+                            else:
+                                data.sand[i].dx/=-data.boing
+                    else:
+                        if (0<data.sand[i].angle<math.pi/2 or 
+                            math.pi<data.sand[i].angle<3*math.pi/2):
+                            if data.sand[i].dx==0:
+                                data.sand[i].dx=1
+                            elif data.sand[i].dx>0:
+                                data.sand[i].dx*=-data.boing
+                            else:
+                                data.sand[i].dx*=data.boing
+                        else:
+                            if data.sand[i].dx==0:
+                                data.sand[i].dx=-1
+                            elif data.sand[i].dx>0:
+                                data.sand[i].dx*=data.boing
+                            else:
+                                data.sand[i].dx*=-data.boing
+                    
+                    #move
+                    data.sand[i].unmoveY()
+                    data.sand[i].moveX()
+                    
+                #stop moving
+                if abs(data.sand[i].dy)<2:
+                    data.sand[i].dx=0
         
         #boundary bouncing
-        if sand.cx-sand.r<=0 or sand.cx+sand.r>=data.width:
-            sand.unmoveX()
+        if data.sand[i].cx-data.sand[i].r<=0 or data.sand[i].cx+data.sand[i].r>=data.width:
+            data.sand[i].unmoveX()
             #stop dy
-            if abs(sand.dy)<2:
-                sand.dx=0
-        if sand.cy-sand.r<=0 or sand.cy+sand.r>=data.height:
-            sand.unmoveY()
+            if abs(data.sand[i].dy)<2:
+                data.sand[i].dx=0
+        if data.sand[i].cy-data.sand[i].r<=0 or data.sand[i].cy+data.sand[i].r>=data.height:
+            data.sand[i].unmoveY()
             #stop dy
-            if abs(sand.dy)<2:
-                sand.dx=0
-        sand.dy+=data.gravity
-
+            if abs(data.sand[i].dy)<2:
+                data.sand[i].dx=0
+        data.sand[i].dy+=data.gravity
+        
         #valve reactions
+        collided=False
         for valve in data.valves:
-            if valve.collides(sand.cy, sand.r):
+            if valve.collides(data.sand[i].cy, data.sand[i].cx, data.sand[i].r):
                 print()
-                valve.value+=sand.value
-                data.govSand.remove(sand)
+                valve.value+=data.sand[i].value
+                data.sand.pop(i)
+                collided=True
+                break
+        if collided==False:
+            i+=1
+
+def releaseValves(data):
+    for valve in data.valves:
+        data.sand.extend(valve.releaseBalls(data.radius, 0, 1, data.boing))
 
 def mousePressed(event, data):
     print(event.x, event.y)
@@ -333,6 +417,7 @@ def mousePressed(event, data):
             else:
                 button.clicked=False
             print(button.clicked)
+            data.isPaused=True
     
 def keyPressed(event, data):
     pass
@@ -348,7 +433,7 @@ def redrawAll(canvas, data):
     #data.sand.draw(canvas)
     for valve in data.valves:
         valve.draw(canvas)
-    for sand in data.govSand:
+    for sand in data.sand:
         sand.draw(canvas)
 
 ## Run Functions
