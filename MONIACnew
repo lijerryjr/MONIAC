@@ -2,6 +2,18 @@
 import math
 import random
 from tkinter import *
+import tkinter
+
+from matplotlib.backends.backend_tkagg import (
+    FigureCanvasTkAgg, NavigationToolbar2Tk)
+# Implement the default Matplotlib key bindings.
+from matplotlib.backend_bases import key_press_handler
+from matplotlib.figure import Figure
+from matplotlib import style
+import matplotlib.animation as animation
+
+import numpy as np
+
 
 def readCsvFile(path):
     # Returns a 2d list with the data in the given csv file
@@ -28,8 +40,7 @@ def roundUp(x):
 ## Sand, Wall, Variable, and Button Objects
 class Sand(object):
     #Creates sand object with position and directional changes
-    def __init__(self, value, cx, cy, r, dx, dy, boing, gravity=2):
-        self.value=value
+    def __init__(self, cx, cy, r, dx, dy, boing, gravity=2):
         self.cx=cx
         self.cy=cy
         self.r=r
@@ -110,8 +121,19 @@ class Wall(object):
     def draw(self, canvas):
         canvas.create_line(self.x1, self.y1, self.x2, self.y2)
 
+class Label(object):
+    def __init__(self, name, xPos, yPos):
+        self.name=name
+        self.xPos=xPos
+        self.yPos=yPos
+    def draw(self, canvas):
+        canvas.create_text(self.xPos, self.yPos, text=self.name)
+
+## Button objects, change drawPage and isClicked functions to take in data
+#isclicked-->modify data.isPaused and data.clickedButton
+#drawPage-->simply to one functio that can intake data.drawAgain
 class Button(object):
-    def __init__(self, name, cx, cy, width, height, clicked=False):
+    def __init__(self, name, cx, cy, width, height):
         self.name=name
         self.x1=cx-width
         self.x2=cx+width
@@ -119,7 +141,6 @@ class Button(object):
         self.y2=cy+height
         self.cx=cx
         self.cy=cy
-        self.clicked=clicked
     def draw(self, canvas):
         canvas.create_rectangle(self.x1, self.y1, self.x2, self.y2)
     def isClicked(self, mouseX, mouseY):
@@ -129,26 +150,90 @@ class Button(object):
         else:
             return False
 
+class PauseButton(Button):
+    def draw(self, canvas):
+        super().draw(canvas)
+        canvas.create_text(self.cx, self.cy, text="Pause")
+    def runCommand(self, data):
+        data.isPaused=not data.isPaused
+        
+class HelpButton(Button):
+    def __init__(self, name, cx, cy, width, height, clicked=False):
+        super().__init__(name, cx, cy, width, height)
+        self.clicked=clicked
+    def draw(self, canvas):
+        super().draw(canvas)
+        canvas.create_text(self.cx, self.cy, text="?")
+    def runCommand(self, data):
+        self.clicked=not self.clicked
+        if self.clicked:
+            data.isPaused=True
+        else:
+            data.isPaused=False
+            data.clickedButton=None
+    def drawPage(self, canvas, data):
+        message='''The MONIAC (Monetary National Income Analogue Computer) machine, 
+                   also known as the Phillips machine, was first created by economist
+                   Bill Phillips in 1949 at the London School of Economics. The
+                   machine models the macroeconomy by taking into account the various
+                   components of Gross Domestic Product (GDP)--Consumption, Government
+                   Spending, Investment, Exports, and Imports, and can be modelled by
+                   the equation GDP=C+I+G+X-M. In this simulation of the MONIAC machine,
+                   you can change the values of various macroeconomic variables, which
+                   in turn affect how much of the economy's output flows into each
+                   sector. Output or monetary funds are represented as sand objects. 
+                   You may also view graphs of values over time. In the Base Game mode,
+                   the effects of a single monetary injection in the economy is 
+                   illustrated, whereas the Loop Game mode demonstrates a more accurate
+                   representation where output continuously flows around the 
+                   macroeconomy. To go back to the previous page, press the help button
+                   again.
+                   '''
+        canvas.create_text(data.width/2, data.height/2, text=message)
+
+class BaseGameButton(Button):
+    def draw(self, canvas):
+        super().draw(canvas)
+        canvas.create_text(self.cx, self.cy, text="Begin Base Game")
+    def runCommand(self, data):
+        data.mode="Base Game"
+
+class LoopGameButton(Button):
+    def draw(self, canvas):
+        super().draw(canvas)
+        canvas.create_text(self.cx, self.cy, text="Begin Loop Game")
+    def runCommand(self, data):
+        data.mode="Loop Game"
+
 class VariableButton(Button):
-    def __init__(self, name, cx, cy, width, height, value, clicked=False):
-        super().__init__(name, cx, cy, width, height, clicked)
+    def __init__(self, name, cx, cy, width, height, value):
+        super().__init__(name, cx, cy, width, height)
         self.value=value
     def draw(self, canvas):
         super().draw(canvas)
         canvas.create_text(self.cx, self.cy, text='%s: %0.2f'%(self.name, self.value))
-    def drawPage(self, canvas, datax, datay, curInput):
-        canvas.create_text(datax/2, datay/2, text='Input New %s'%(self.name))
-        canvas.create_text(datax/2, datay*6/11, text=curInput)
-    def drawPageAgain(self, canvas, datax, datay, curInput):
-        canvas.create_text(datax/2, datay*5/11, text="Try again")
-        canvas.create_text(datax/2, datay/2, text='Input New %s'%(self.name))
-        canvas.create_text(datax/2, datay*6/11, text=curInput)
+    def runCommand(self, data):
+        data.isPaused=True
+    def drawPage(self, canvas, data):
+        if data.drawAgain:
+            canvas.create_text(data.width/2, data.height*5/11, text="Input must be a float between 0 and 1.")
+        canvas.create_text(data.width/2, data.height/2, text='Input New %s'%(self.name))
+        canvas.create_text(data.width/2, data.height*6/11, text=data.buttonInput)
     def updateValue(self, input):
         assert(0<=float(input)<=1)
         self.value=float(input)
+    
+class GraphButton(Button):
+    def draw(self, canvas):
+        super().draw(canvas)
+        canvas.create_text(self.cx, self.cy, text='Show Graph')
+    def runCommand(self, data):
+        runGraph(data)
 
+##other objects
 class Valve(object):
-    def __init__(self, rate, x1, y1, x2, y2):
+    def __init__(self, name, rate, x1, y1, x2, y2):
+        self.name=name
         self.rate=rate
         self.x1=x1
         self.y1=y1
@@ -163,7 +248,7 @@ class Valve(object):
         canvas.create_rectangle(x1, y1, x2, y2, fill='green')
         canvas.create_text((x1+x2)/2, (y1+y2)/2, text=self.value)
     def releaseBalls(self, r, dx, dy, boing):
-        ballsReleased=roundUp(self.value/10*self.rate)
+        ballsReleased=roundUp(self.value*self.rate)
         sandL=[]
         ballGrid=createSandGrid(3, ballsReleased)
         startX=(self.x1+self.x2)/2
@@ -171,20 +256,22 @@ class Valve(object):
         for row in range(len(ballGrid)):
             for col in range(len(ballGrid[row])):
                 if ballGrid[row][col]!=None:
-                    sand=Sand(10, startX+r*2*col, startY+r*(2*row+1), r, dx, dy, boing)
+                    sand=Sand(startX+r*2*col, startY+r*(2*row+1), r, dx, dy, boing)
                     sandL.append(sand)
-        self.value-=ballsReleased*10
+        self.value-=ballsReleased
         return sandL
     def collides(self, cy, cx, r):
         return cy+r>=self.y1 and cy-r<=self.y2 and cx-r<=self.x2 and cx+r>=self.x1
+    def updateValue(self, newRate):
+        self.rate=newRate
 
 class SumValve(Valve):
-    def __init__(self, rate, x1, y1, x2, y2, spendingRate):
-        super().__init__(rate, x1, y1, x2, y2)
+    def __init__(self, name, rate, x1, y1, x2, y2, spendingRate):
+        super().__init__(name, rate, x1, y1, x2, y2)
         self.spendingRate=spendingRate
     def releaseBalls(self, r, dx, dy, boing):
-        ballsReleased1=roundUp(self.value*(1-self.rate)/10*self.spendingRate)
-        ballsReleased2=int(self.value*self.rate/10*self.spendingRate)
+        ballsReleased1=roundUp(self.value*(1-self.rate)*self.spendingRate)
+        ballsReleased2=int(self.value*self.rate*self.spendingRate)
         sandL=[]
         ballGrid1=createSandGrid(10, ballsReleased1)
         ballGrid2=createSandGrid(10, ballsReleased2)
@@ -194,20 +281,19 @@ class SumValve(Valve):
         for row in range(len(ballGrid1)):
             for col in range(len(ballGrid1[row])):
                 if ballGrid1[row][col]!=None:
-                    sand=Sand(10, startX1+r*2*col, startY+r*(2*row+1), r, -dx, dy, boing)
+                    sand=Sand(startX1+r*2*col, startY+r*(2*row+1), r, -dx, dy, boing)
                     sandL.append(sand)
         for row in range(len(ballGrid2)):
             for col in range(len(ballGrid2[row])):
                 if ballGrid2[row][col]!=None:
-                    sand=Sand(10, startX2+r*2*col, startY+r*(2*row+1), r, dx, dy, boing)
+                    sand=Sand(startX2+r*2*col, startY+r*(2*row+1), r, dx, dy, boing)
                     sandL.append(sand)
-        self.value-=(ballsReleased1+ballsReleased2)*10
+        self.value-=(ballsReleased1+ballsReleased2)
         return sandL
-
 
 class HorizontalValve(Valve):
     def releaseBalls(self, r, dx, dy, boing):
-        ballsReleased=roundUp(self.value/10*self.rate)
+        ballsReleased=roundUp(self.value*self.rate)
         sandL=[]
         ballGrid=createSandGrid(3, ballsReleased)
         startX=self.x1-r
@@ -215,15 +301,17 @@ class HorizontalValve(Valve):
         for row in range(len(ballGrid)):
             for col in range(len(ballGrid[row])):
                 if ballGrid[row][col]!=None:
-                    sand=Sand(10, startX-r*2*col, startY+r*(2*row+1), r, -abs(dx), dy, boing)
+                    sand=Sand(startX-r*2*col, startY+r*(2*row+1), r, -abs(dx), dy, boing)
                     sandL.append(sand)
-        self.value-=ballsReleased*10
+        self.value-=ballsReleased
         return sandL
 
 ## MVC
 def init(data):
     #initialize macroeconomic variables
+    #data.GDP=5000
     data.GDP=500
+    data.fixedGDP=10
     data.interestRate=0.02
     data.lendingRate=0.5
     data.taxRate=0.05
@@ -235,18 +323,13 @@ def init(data):
     #initialize background objects
     data.newX=data.width*2/3
     data.walls=initializeWalls(data)
-    data.buttons=initializeButtons(data)
+    data.buttons=initializeMainButtons(data)
+    data.helpButton=HelpButton("Help Button", data.width*9/10, data.height/10, 
+                               data.width/15, data.height/10)
+    data.startButtons=initializeStartButtons(data)
     data.valves=initializeValves(data)
+    data.labels=initializeLabels(data)
     
-    #pausing
-    data.isPaused=False
-    data.buttonOn=False
-    data.clickedButton=None
-    data.buttonInput=''
-    data.drawAgain=False
-    
-    data.timerDelay = 10
-
     #initialize sand
     data.dx = 0.5
     data.dy = 1
@@ -254,43 +337,65 @@ def init(data):
     data.boing = 0.3
     data.xboing=0.7
     data.radius=3
-    data.sand=initializeConSand(data)+initializeSavingSand(data)+initializeGovSand(data)
+    data.sand=[]
+    
+    #graph stuff
+    data.cValues=[0]
+    data.tValues=[0]
+    data.gValues=[0]
+    data.sValues=[0]
+    data.iValues=[0]
+    data.dsValues=[0]
+    data.mValues=[0]
+    data.xValues=[0]
+    data.timerFiredCount=0
+    
+    #pausing and modes
+    data.mode="Start Screen"
+    data.isPaused=False
+    data.buttonOn=False
+    data.clickedButton=None
+    data.buttonInput=''
+    data.drawAgain=False
+    data.timerDelay = 10
 
-def initializeGovSand(data):
+##Sand
+def initializeGovSand(data, gdp):
     sandL=[]
-    govGrid=createSandGrid(8, int(data.GDP*data.taxRate))
+    govGrid=createSandGrid(8, roundUp(gdp*data.taxRate))
     startX=data.newX/20
     startY=data.newX/20
     for row in range(len(govGrid)):
         for col in range(len(govGrid[row])):
             if govGrid[row][col]!=None:
-                sand=Sand(10, startX+data.radius*2*col, startY+data.radius*2*row, data.radius, 
+                sand=Sand(startX+data.radius*2*col, startY+data.radius*2*row, data.radius, 
                           data.dx, data.dy, data.boing)
                 sandL.append(sand)
     return sandL
 
-def initializeConSand(data):
+def initializeConSand(data, gdp):
     sandL=[]
-    consumptionGrid=createSandGrid(16, int(data.GDP*(1-data.taxRate-data.interestRate)))
+    consumptionGrid=createSandGrid(32, gdp-len(initializeGovSand(data, gdp))-
+                                   len(initializeSavingSand(data, gdp)))
     startX=data.newX*2/5
     startY=data.newX/20
     for row in range(len(consumptionGrid)):
         for col in range(len(consumptionGrid[row])):
             if consumptionGrid[row][col]!=None:
-                sand=Sand(10, startX+data.radius*2*col, startY+data.radius*2*row, data.radius, 
+                sand=Sand(startX+data.radius*2*col, startY+data.radius*2*row, data.radius, 
                           data.dx, data.dy, data.boing)
                 sandL.append(sand)
     return sandL
     
-def initializeSavingSand(data):
+def initializeSavingSand(data, gdp):
     sandL=[]
-    savingGrid=createSandGrid(4, int(data.GDP*data.interestRate))
+    savingGrid=createSandGrid(4, roundUp(gdp*data.interestRate))
     startX=data.newX*7/10
     startY=data.newX/20
     for row in range(len(savingGrid)):
         for col in range(len(savingGrid[row])):
             if savingGrid[row][col]!=None:
-                sand=Sand(10, startX+data.radius*2*col, startY+data.radius*2*row, data.radius, 
+                sand=Sand(startX+data.radius*2*col, startY+data.radius*2*row, data.radius, 
                           data.dx, data.dy, data.boing)
                 sandL.append(sand)
     return sandL
@@ -306,15 +411,17 @@ def createSandGrid(cols, balls):
             balls-=balls%cols
     return L
 
+##Valves, Walls, Buttons
 def initializeValves(data):
     #Creates valves
-    govValve=Valve(data.govSpendingRate, 0, data.height/3, data.newX/6, data.height*4/9)
-    bankValve=Valve(data.lendingRate, data.newX*5/6, data.height*7/18, data.newX, data.height/2)
-    foreignValve=HorizontalValve(data.exportRate, data.newX*3/4, data.height*14/18*11/10,
+    govValve=Valve("GovSector", data.govSpendingRate, 0, data.height/3, data.newX/6, data.height*4/9)
+    bankValve=Valve("FinancialSector", data.lendingRate, data.newX*5/6, data.height*7/18, data.newX, data.height/2)
+    foreignValve=HorizontalValve("ForeignSector", data.exportRate, data.newX*3/4, data.height*14/18*11/10,
                        data.newX*17/18, data.height*14/18*11/10*16/15)
-    spendingValve=SumValve(data.importRate, data.newX/3, data.height/2, 
+    domSpendingValve=SumValve("TotalSpendingSector", data.importRate, data.newX/3, data.height/2, 
                            data.newX*2/3, data.height*12/18, data.spendingRate)
-    return [govValve, bankValve, foreignValve, spendingValve]
+    consumptionValve=Valve("ConsumerSector", 1, data.newX/3, data.height/3, data.newX*2/3, data.height/3*1.2)
+    return [govValve, bankValve, foreignValve, domSpendingValve, consumptionValve]
 
 def initializeWalls(data):
     #creates walls with amazing hard code
@@ -348,13 +455,33 @@ def initializeWalls(data):
     return [wall0, wall1, wall2, wall3, wall4, wall5, wall6, wall7, wall8, 
             wall9, wall10, wall11, wall12, wall13, wall14, wall15, wall16, 
             wall17, wall18]
-    
-def initializeButtons(data):
-    #creates buttons with more amazing hard code
+
+def initializeLabels(data):
+    taxLabel=Label("Gov. Tax Income", data.newX/6, data.height/9)
+    gSpendingLabel=Label("Gov. Spending", data.newX/6, data.height/2)
+    consumptionLabel=Label("Consumer Spending", data.newX/2, data.height/6)
+    savingLabel=Label("Saving", data.newX*5/6, data.height/6)
+    investmentLabel=Label("Investment", data.newX*5/6, data.height*6/11)
+    importLabel=Label("Imports", data.newX*7/9, data.height*12/15)
+    exportLabel=Label("Exports", data.newX*7/10, data.height*22/25)
+    return [taxLabel, gSpendingLabel, consumptionLabel, savingLabel, 
+            investmentLabel, importLabel, exportLabel]
+
+def initializeStartButtons(data):
+    #creates start screen buttons
+    bWidth=data.width/10
+    bHeight=data.height/25
+    xPos=data.width/2
+    baseGameButton=BaseGameButton("Base Game Button", xPos, data.height*5/11, bWidth, bHeight)
+    loopGameButton=LoopGameButton("Loop Game Button", xPos, data.height*7/11, bWidth, bHeight)
+    return [baseGameButton, loopGameButton]
+
+def initializeMainButtons(data):
+    #creates main game buttons with more amazing hard code
     bWidth=data.width/15
     bHeight=data.height/25
     xPos=data.width*8/9
-    pauseButton=Button("Pause Button", xPos, data.height*3/11, bWidth, bHeight)
+    pauseButton=PauseButton("Pause Button", xPos, data.height*3/11, bWidth, bHeight)
     interestRateButton=VariableButton("Interest Rt", xPos, data.height*6/11,
                               bWidth, bHeight, data.interestRate)
     taxRateButton=VariableButton("Tax Rt", xPos, data.height*7/11, bWidth,
@@ -366,15 +493,32 @@ def initializeButtons(data):
     govSpendingButton=VariableButton("Gov. Spending Rt", xPos,
                              data.height*10/11, bWidth, bHeight, 
                              data.govSpendingRate)
+    graphButton=GraphButton("Graph Button", xPos, data.height*5/11, bWidth, bHeight)
     return [pauseButton, interestRateButton, taxRateButton, importRateButton, 
-            exportRateButton, govSpendingButton]
+            exportRateButton, govSpendingButton, graphButton]
 
+##Animation Framework
 def timerFired(data):
-    if (not data.isPaused):
-        newDoStep(data)
-        releaseValves(data)
+    if data.mode=="Base Game":
+        if (not data.isPaused):
+            baseDoStep(data)
+            releaseValves(data)
+            data.timerFiredCount+=1
+            '''
+            if data.timerFiredCount%10==0:
+                releaseValves(data)
+            '''
+    elif data.mode=="Loop Game":
+        if (not data.isPaused):
+            loopDoStep(data)
+            releaseValves(data)
+            data.timerFiredCount+=1
+            if data.timerFiredCount%10==0:
+                data.sand.extend(initializeConSand(data, data.fixedGDP)+
+                                    initializeSavingSand(data, data.fixedGDP)+
+                                    initializeGovSand(data, data.fixedGDP))
 
-def newDoStep(data):
+def baseDoStep(data):
     i=0
     while i<(len(data.sand)):
         data.sand[i].move()
@@ -473,7 +617,115 @@ def newDoStep(data):
         collided=False
         for valve in data.valves:
             if valve.collides(data.sand[i].cy, data.sand[i].cx, data.sand[i].r):
-                valve.value+=data.sand[i].value
+                valve.value+=1
+                data.sand.pop(i)
+                collided=True
+                break
+        if collided==False:
+            i+=1
+
+def loopDoStep(data):
+    i=0
+    while i<(len(data.sand)):
+        data.sand[i].move()
+        data.sand[i].updateAngle()
+        #wall collisions and bouncing
+        for wall in data.walls:
+            if data.sand[i].collides(wall):
+                if wall.slope==0:
+                    #reverse x if collides with vertical wall
+                    if data.sand[i].dx>0:
+                        data.sand[i].cx=wall.x1-data.sand[i].r
+                    else:
+                        data.sand[i].cx=wall.x1+data.sand[i].r
+                    data.sand[i].unmoveX()
+                else:
+                    #set height to line and reverse dy
+                    data.sand[i].cy=wall.slope*(data.sand[i].cx-wall.x1)+wall.y1
+                    if data.sand[i].dy<0:
+                        data.sand[i].cy+=data.sand[i].r
+                    else:
+                        data.sand[i].cy-=data.sand[i].r
+                    
+                    #modify angle
+                    data.sand[i].angle=(wall.angle-math.pi+data.sand[i].angle)
+                    data.sand[i].angle%=(2*math.pi)
+                    
+                    #modify dx
+                    if data.sand[i].dx==0:
+                        if (0<data.sand[i].angle<math.pi/2 or 
+                            math.pi<data.sand[i].angle<3*math.pi/2):
+                            data.sand[i].dx=1
+                        else:
+                            data.sand[i].dx=-1
+                    else:
+                        data.sand[i].dx/=data.xboing
+                    '''
+                    if data.sand[i].dy<0:
+                        if (0<data.sand[i].angle<math.pi/2 or 
+                            math.pi<data.sand[i].angle<3*math.pi/2):
+                            print(1)
+                            if data.sand[i].dx==0:
+                                data.sand[i].dx=1
+                            elif data.sand[i].dx>0:
+                                data.sand[i].dx/=-data.boing
+                            else:
+                                data.sand[i].dx/=data.boing
+                        else:
+                            print(2)
+                            if data.sand[i].dx==0:
+                                data.sand[i].dx=1
+                            elif data.sand[i].dx>0:
+                                data.sand[i].dx/=data.boing
+                            else:
+                                data.sand[i].dx/=-data.boing
+                    else:
+                        if (0<data.sand[i].angle<math.pi/2 or 
+                            math.pi<data.sand[i].angle<3*math.pi/2):
+                            print(3)
+                            if data.sand[i].dx==0:
+                                data.sand[i].dx=1
+                            elif data.sand[i].dx>0:
+                                data.sand[i].dx*=-data.boing
+                            else:
+                                data.sand[i].dx*=data.boing
+                        else:
+                            print(4)
+                            if data.sand[i].dx==0:
+                                data.sand[i].dx=-1
+                            elif data.sand[i].dx>0:
+                                data.sand[i].dx*=data.boing
+                            else:
+                                data.sand[i].dx*=-data.boing
+                    '''
+                    #move
+                    data.sand[i].unmoveY()
+                    data.sand[i].moveX()
+                    
+                #stop moving
+                if abs(data.sand[i].dy)<2:
+                    data.sand[i].dx*=data.xboing
+        
+        #boundary bouncing
+        if data.sand[i].cx-data.sand[i].r<=0 or data.sand[i].cx+data.sand[i].r>=data.width:
+            data.sand[i].unmoveX()
+            #stop dy
+            if abs(data.sand[i].dy)<2:
+                data.sand[i].dx=0
+        if data.sand[i].cy-data.sand[i].r<=0:
+            data.sand[i].unmoveY()
+            #stop dy
+            if abs(data.sand[i].dy)<2:
+                data.sand[i].dx=0
+        elif data.sand[i].cy+data.sand[i].r>=data.height:
+            data.sand.pop(i)
+        data.sand[i].dy+=data.gravity
+        
+        #valve reactions
+        collided=False
+        for valve in data.valves:
+            if valve.collides(data.sand[i].cy, data.sand[i].cx, data.sand[i].r):
+                valve.value+=1
                 data.sand.pop(i)
                 collided=True
                 break
@@ -482,29 +734,69 @@ def newDoStep(data):
 
 def releaseValves(data):
     for valve in data.valves:
-        data.sand.extend(valve.releaseBalls(data.radius, 0.5, 1, data.boing))
+        if valve.name=="GovSector":
+            data.tValues.append(valve.value)
+        elif valve.name=="FinancialSector":
+            data.sValues.append(valve.value)
+        elif valve.name=="ForeignSector":
+            data.mValues.append(valve.value)
+        result=valve.releaseBalls(data.radius, 0.5, 1, data.boing)
+        if valve.name=="ConsumerSector":
+            data.cValues.append(len(result))
+        elif valve.name=="TotalSpendingSector":
+            data.dsValues.append(len(result))
+        elif valve.name=="GovSector":
+            data.gValues.append(len(result))
+        elif valve.name=="ForeignSector":
+            data.xValues.append(len(result))
+        elif valve.name=="FinancialSector":
+            data.iValues.append(len(result))
+        data.sand.extend(result)
 
 def mousePressed(event, data):
     #mouse and button interactions will mainly be here
-    if data.clickedButton==None:
-        for button in data.buttons:
-            if button.isClicked(event.x, event.y):
-                button.clicked=True
-                data.isPaused=not data.isPaused
-                data.clickedButton=button
-                break
-            else:
-                button.clicked=False
-        if not data.isPaused:
-            data.clickedButton=None
-    
-    
-    ##
+    if data.mode=="Start Screen":
+        if data.clickedButton==None:
+            for button in data.startButtons:
+                if button.isClicked(event.x, event.y):
+                    data.clickedButton=button
+                    button.runCommand(data)
+                    if data.mode=="Base Game":
+                        data.sand.extend(initializeConSand(data, data.GDP)+
+                                         initializeSavingSand(data, data.GDP)+
+                                         initializeGovSand(data, data.GDP))
+                    else:
+                        data.sand.extend(initializeConSand(data, data.fixedGDP)+
+                                         initializeSavingSand(data, data.fixedGDP)+
+                                         initializeGovSand(data, data.fixedGDP))
+    else:
+        if data.clickedButton==None or not isinstance(data.clickedButton, VariableButton):
+            for button in data.buttons:
+                if button.isClicked(event.x, event.y):
+                    data.clickedButton=button
+                    button.runCommand(data)
+    if data.helpButton.isClicked(event.x, event.y):
+        data.clickedButton=data.helpButton
+        data.helpButton.runCommand(data)
+        
 def keyPressed(event, data):
     if data.clickedButton!=None:
         if event.keysym=="Return":
             try:
                 data.clickedButton.updateValue(data.buttonInput)
+                if data.clickedButton.name=="Interest Rt":
+                    data.interestRate=float(data.buttonInput)
+                elif data.clickedButton.name=="Tax Rt":
+                    data.taxRate=float(data.buttonInput)
+                elif data.clickedButton.name=="Import Rt":
+                    data.importRate=float(data.buttonInput)
+                    data.valves[3].updateValue(data.importRate)
+                elif data.clickedButton.name=="Export Rt":
+                    data.exportRate=float(data.buttonInput)
+                    data.valves[2].updateValue(data.exportRate)
+                elif data.clickedButton.name=="Gov. Spending Rt":
+                    data.govSpendingRate=float(data.buttonInput)
+                    data.valves[0].updateValue(data.govSpendingRate)
                 data.clickedButton=None
                 data.isPaused=False
                 data.buttonInput=''
@@ -515,26 +807,117 @@ def keyPressed(event, data):
         else:
             data.buttonInput+=str(event.char)
 
-def drawButtonPage(canvas, data, name):
-    pass
-
 def redrawAll(canvas, data):
-    if data.clickedButton==None:
-        for wall in data.walls:
-            wall.draw(canvas)
-        for button in data.buttons:
-            button.draw(canvas) 
-        #data.sand.draw(canvas)
-        for valve in data.valves:
-            valve.draw(canvas)
-        for sand in data.sand:
-            sand.draw(canvas)
+    data.helpButton.draw(canvas)
+    if data.clickedButton==data.helpButton:
+        data.helpButton.drawPage(canvas, data)
     else:
-        if data.drawAgain:
-            print(4)
-            data.clickedButton.drawPageAgain(canvas, data.width, data.height, data.buttonInput)
+        if data.mode=="Start Screen":
+            for button in data.startButtons:
+                button.draw(canvas)
         else:
-            data.clickedButton.drawPage(canvas, data.width, data.height, data.buttonInput)
+            if data.clickedButton==None:
+                for wall in data.walls:
+                    wall.draw(canvas)
+                for button in data.buttons:
+                    button.draw(canvas) 
+                for valve in data.valves:
+                    valve.draw(canvas)
+                for sand in data.sand:
+                    sand.draw(canvas)
+                for label in data.labels:
+                    label.draw(canvas)
+            else:
+                if isinstance(data.clickedButton, VariableButton):
+                    data.clickedButton.drawPage(canvas, data)
+                else:
+                    for button in data.buttons:
+                        button.draw(canvas) 
+                    for wall in data.walls:
+                        wall.draw(canvas)
+                    for valve in data.valves:
+                        valve.draw(canvas)
+                    for sand in data.sand:
+                        sand.draw(canvas)
+                    for label in data.labels:
+                        label.draw(canvas)
+
+## Graph functions
+def runGraph(data):
+    # https://matplotlib.org/gallery/user_interfaces/embedding_in_tk_sgskip.html
+    root = tkinter.Tk()
+    root.wm_title("Embedding in Tk")
+    #style.use('fivethirtyeight')
+    fig = Figure(figsize=(10, 8), dpi=100)
+
+    #background subplot
+    superGraph=fig.add_subplot(111)
+    superGraph.set_xlabel('Time')
+    superGraph.set_ylabel('USD')
+    # Turn off axis lines and ticks of the big subplot
+    superGraph.spines['top'].set_color('none')
+    superGraph.spines['bottom'].set_color('none')
+    superGraph.spines['left'].set_color('none')
+    superGraph.spines['right'].set_color('none')
+    superGraph.tick_params(labelcolor='w', top='off', bottom='off', left='off', right='off')
+    
+    #Main graphs
+    graph1=fig.add_subplot(421)
+    graph2=fig.add_subplot(422)
+    graph3=fig.add_subplot(423)
+    graph4=fig.add_subplot(424)
+    graph5=fig.add_subplot(425)
+    graph6=fig.add_subplot(426)
+    graph7=fig.add_subplot(427)
+    graph8=fig.add_subplot(428)
+    #set titles
+    graph1.set_title('Consumption')
+    graph2.set_title('Tax Income')
+    graph3.set_title('Gov Spending')
+    graph4.set_title('Saving')
+    graph5.set_title('Investment')
+    graph6.set_title('Total Domestic Spending')
+    graph7.set_title('Imports')
+    graph8.set_title('Exports')
+    #set values
+    time=np.array([i for i in range(len(data.cValues))])
+    graph1.plot(time, np.array(data.cValues))
+    graph2.plot(time, np.array(data.tValues))
+    graph3.plot(time, np.array(data.gValues))
+    graph4.plot(time, np.array(data.sValues))
+    graph5.plot(time, np.array(data.iValues))
+    graph6.plot(time, np.array(data.dsValues))
+    graph7.plot(time, np.array(data.mValues))
+    graph8.plot(time, np.array(data.xValues))
+    
+    fig.subplots_adjust(left=None, bottom=0.1, right=None, top=0.9, wspace=None, hspace=0.5)
+    
+    #Plotting code in tkinter
+    canvas = FigureCanvasTkAgg(fig, master=root)  # A tk.DrawingArea.
+    canvas.draw()
+    canvas.get_tk_widget().pack(side=tkinter.TOP, fill=tkinter.BOTH, expand=1)
+    
+    toolbar = NavigationToolbar2Tk(canvas, root)
+    toolbar.update()
+    canvas.get_tk_widget().pack(side=tkinter.TOP, fill=tkinter.BOTH, expand=1)
+    
+    
+    def on_key_press(event):
+        print("you pressed {}".format(event.key))
+        key_press_handler(event, canvas, toolbar)
+    
+    canvas.mpl_connect("key_press_event", on_key_press)
+    
+    def _quit():
+        root.quit()     # stops mainloop
+        root.destroy()  # this is necessary on Windows to prevent
+                        # Fatal Python Error: PyEval_RestoreThread: NULL tstate
+    button = tkinter.Button(master=root, text="Quit", command=_quit)
+    button.pack(side=tkinter.BOTTOM)
+    
+    tkinter.mainloop()
+    # If you put root.destroy() here, it will cause an error if the window is
+    # closed with the window manager.
 
 ## Run Functions
 def runAnimation(width=1200, height=600):
@@ -578,6 +961,7 @@ def runAnimation(width=1200, height=600):
                             keyPressedWrapper(event, canvas, data))
     timerFiredWrapper(canvas, data)
     # and launch the app
+    #runGraph(data)
     root.mainloop()  # blocks until window is closed
     print("bye!")
 
