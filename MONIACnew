@@ -1,20 +1,21 @@
-#MONIAC.py game
+###################
+# MONIAC.py game
+###################
+
+##Imports
 import math
 import random
+import numpy as np
+
 from tkinter import *
 import tkinter
 
-from matplotlib.backends.backend_tkagg import (
-    FigureCanvasTkAgg, NavigationToolbar2Tk)
-# Implement the default Matplotlib key bindings.
+from matplotlib.backends.backend_tkagg import (FigureCanvasTkAgg, NavigationToolbar2Tk)
 from matplotlib.backend_bases import key_press_handler
 from matplotlib.figure import Figure
 from matplotlib import style
-import matplotlib.animation as animation
 
-import numpy as np
-
-
+## Basic Math Functions
 def readCsvFile(path):
     # Returns a 2d list with the data in the given csv file
     result = [ ]
@@ -36,11 +37,10 @@ def roundUp(x):
     else:
         return int(x)+1
 
-
 ## Sand, Wall, Variable, and Button Objects
 class Sand(object):
     #Creates sand object with position and directional changes
-    def __init__(self, cx, cy, r, dx, dy, boing, gravity=2):
+    def __init__(self, cx, cy, r, dx, dy, boing, color='yellow'):
         self.cx=cx
         self.cy=cy
         self.r=r
@@ -51,10 +51,12 @@ class Sand(object):
         else:
             self.angle=math.atan(abs(self.dy)/abs(self.dx))
         self.boing=boing
+        self.color=color
     def __str__(self):
         return "%0.1f %0.1f" %(self.dx, self.dy)
     def draw(self, canvas):
-        canvas.create_oval(self.cx-self.r, self.cy-self.r, self.cx+self.r, self.cy+self.r)
+        canvas.create_oval(self.cx-self.r, self.cy-self.r, self.cx+self.r, 
+                           self.cy+self.r, fill=self.color)
     def move(self):
         self.cx+=math.cos(math.radians(self.angle))*self.dx
         self.cy+=math.sin(math.radians(self.angle))*self.dy
@@ -122,18 +124,19 @@ class Wall(object):
         canvas.create_line(self.x1, self.y1, self.x2, self.y2)
 
 class Label(object):
-    def __init__(self, name, xPos, yPos):
+    def __init__(self, name, xPos, yPos, color):
         self.name=name
         self.xPos=xPos
         self.yPos=yPos
+        self.color=color
     def draw(self, canvas):
-        canvas.create_text(self.xPos, self.yPos, text=self.name)
+        canvas.create_text(self.xPos, self.yPos, text=self.name, fill=self.color)
 
 ## Button objects, change drawPage and isClicked functions to take in data
 #isclicked-->modify data.isPaused and data.clickedButton
 #drawPage-->simply to one functio that can intake data.drawAgain
 class Button(object):
-    def __init__(self, name, cx, cy, width, height):
+    def __init__(self, name, cx, cy, width, height, color):
         self.name=name
         self.x1=cx-width
         self.x2=cx+width
@@ -141,8 +144,9 @@ class Button(object):
         self.y2=cy+height
         self.cx=cx
         self.cy=cy
+        self.color=color
     def draw(self, canvas):
-        canvas.create_rectangle(self.x1, self.y1, self.x2, self.y2)
+        canvas.create_rectangle(self.x1, self.y1, self.x2, self.y2, fill=self.color)
     def isClicked(self, mouseX, mouseY):
         if (mouseX>=self.x1 and mouseX<=self.x2 and mouseY>=self.y1 and
             mouseY<=self.y2):
@@ -158,8 +162,8 @@ class PauseButton(Button):
         data.isPaused=not data.isPaused
         
 class HelpButton(Button):
-    def __init__(self, name, cx, cy, width, height, clicked=False):
-        super().__init__(name, cx, cy, width, height)
+    def __init__(self, name, cx, cy, width, height, color, clicked=False):
+        super().__init__(name, cx, cy, width, height, color)
         self.clicked=clicked
     def draw(self, canvas):
         super().draw(canvas)
@@ -191,6 +195,16 @@ class HelpButton(Button):
                    '''
         canvas.create_text(data.width/2, data.height/2, text=message)
 
+class HomeButton(Button):
+    def __init__(self, name, cx, cy, width, height, color, clicked=False):
+        super().__init__(name, cx, cy, width, height, color)
+        self.clicked=clicked
+    def draw(self, canvas):
+        super().draw(canvas)
+        canvas.create_text(self.cx, self.cy, text="Home")
+    def runCommand(self, data):
+        init(data)
+            
 class BaseGameButton(Button):
     def draw(self, canvas):
         super().draw(canvas)
@@ -206,8 +220,8 @@ class LoopGameButton(Button):
         data.mode="Loop Game"
 
 class VariableButton(Button):
-    def __init__(self, name, cx, cy, width, height, value):
-        super().__init__(name, cx, cy, width, height)
+    def __init__(self, name, cx, cy, width, height, color, value):
+        super().__init__(name, cx, cy, width, height, color)
         self.value=value
     def draw(self, canvas):
         super().draw(canvas)
@@ -232,25 +246,26 @@ class GraphButton(Button):
 
 ##other objects
 class Valve(object):
-    def __init__(self, name, rate, x1, y1, x2, y2):
+    def __init__(self, name, rate, x1, y1, x2, y2, color):
         self.name=name
         self.rate=rate
         self.x1=x1
         self.y1=y1
         self.x2=x2
         self.y2=y2
+        self.color=color
         self.value=0
     def draw(self, canvas):
         x1=self.x1
         y1=self.y1
         x2=self.x2
         y2=self.y2
-        canvas.create_rectangle(x1, y1, x2, y2, fill='green')
+        canvas.create_rectangle(x1, y1, x2, y2, fill=self.color)
         canvas.create_text((x1+x2)/2, (y1+y2)/2, text=self.value)
     def releaseBalls(self, r, dx, dy, boing):
         ballsReleased=roundUp(self.value*self.rate)
         sandL=[]
-        ballGrid=createSandGrid(3, ballsReleased)
+        ballGrid=createSandGrid(5, ballsReleased)
         startX=(self.x1+self.x2)/2
         startY=self.y2
         for row in range(len(ballGrid)):
@@ -266,14 +281,14 @@ class Valve(object):
         self.rate=newRate
 
 class SumValve(Valve):
-    def __init__(self, name, rate, x1, y1, x2, y2, spendingRate):
-        super().__init__(name, rate, x1, y1, x2, y2)
+    def __init__(self, name, rate, x1, y1, x2, y2, color, spendingRate):
+        super().__init__(name, rate, x1, y1, x2, y2, color)
         self.spendingRate=spendingRate
     def releaseBalls(self, r, dx, dy, boing):
         ballsReleased1=roundUp(self.value*(1-self.rate)*self.spendingRate)
         ballsReleased2=int(self.value*self.rate*self.spendingRate)
         sandL=[]
-        ballGrid1=createSandGrid(10, ballsReleased1)
+        ballGrid1=createSandGrid(14, ballsReleased1)
         ballGrid2=createSandGrid(10, ballsReleased2)
         startX1=self.x1+(self.x2-self.x1)/4
         startX2=self.x1+(self.x2-self.x1)*2/3
@@ -295,7 +310,7 @@ class HorizontalValve(Valve):
     def releaseBalls(self, r, dx, dy, boing):
         ballsReleased=roundUp(self.value*self.rate)
         sandL=[]
-        ballGrid=createSandGrid(3, ballsReleased)
+        ballGrid=createSandGrid(6, ballsReleased)
         startX=self.x1-r
         startY=(self.y1+self.y2)/2
         for row in range(len(ballGrid)):
@@ -310,7 +325,7 @@ class HorizontalValve(Valve):
 def init(data):
     #initialize macroeconomic variables
     #data.GDP=5000
-    data.GDP=500
+    data.GDP=100
     data.fixedGDP=10
     data.interestRate=0.02
     data.lendingRate=0.5
@@ -320,12 +335,22 @@ def init(data):
     data.govSpendingRate=0.5
     data.spendingRate=0.5
     
+    #initialize colors
+    data.consumerColor='red'
+    data.govColor='turquoise'
+    data.bankColor='green'
+    data.dsColor='orange'
+    data.foreignColor='purple'
+    data.neutralColor='white'
+    
     #initialize background objects
     data.newX=data.width*2/3
     data.walls=initializeWalls(data)
     data.buttons=initializeMainButtons(data)
-    data.helpButton=HelpButton("Help Button", data.width*9/10, data.height/10, 
-                               data.width/15, data.height/10)
+    data.helpButton=HelpButton("Help Button", data.width*8/9, data.height/11, 
+                               data.width/15, data.height/25, data.neutralColor)
+    data.homeButton=HomeButton("Home Button", data.width*8/9, data.height*2/11, 
+                               data.width/15, data.height/25, data.neutralColor)
     data.startButtons=initializeStartButtons(data)
     data.valves=initializeValves(data)
     data.labels=initializeLabels(data)
@@ -414,13 +439,19 @@ def createSandGrid(cols, balls):
 ##Valves, Walls, Buttons
 def initializeValves(data):
     #Creates valves
-    govValve=Valve("GovSector", data.govSpendingRate, 0, data.height/3, data.newX/6, data.height*4/9)
-    bankValve=Valve("FinancialSector", data.lendingRate, data.newX*5/6, data.height*7/18, data.newX, data.height/2)
-    foreignValve=HorizontalValve("ForeignSector", data.exportRate, data.newX*3/4, data.height*14/18*11/10,
-                       data.newX*17/18, data.height*14/18*11/10*16/15)
-    domSpendingValve=SumValve("TotalSpendingSector", data.importRate, data.newX/3, data.height/2, 
-                           data.newX*2/3, data.height*12/18, data.spendingRate)
-    consumptionValve=Valve("ConsumerSector", 1, data.newX/3, data.height/3, data.newX*2/3, data.height/3*1.2)
+    govValve=Valve("GovSector", data.govSpendingRate, 0, data.height/3, 
+                   data.newX/6, data.height*4/9, data.govColor)
+    bankValve=Valve("FinancialSector", data.lendingRate, data.newX*5/6, 
+                    data.height*7/18, data.newX, data.height/2, data.bankColor)
+    foreignValve=HorizontalValve("ForeignSector", data.exportRate, 
+                                 data.newX*3/4, data.height*14/18*11/10, 
+                                 data.newX*17/18, data.height*14/18*11/10*16/15,
+                                 data.foreignColor)
+    domSpendingValve=SumValve("TotalSpendingSector", data.importRate, 
+                              data.newX/3, data.height/2, data.newX*2/3, 
+                              data.height*12/18, data.dsColor, data.spendingRate)
+    consumptionValve=Valve("ConsumerSector", 1, data.newX/3, data.height/3, 
+                           data.newX*2/3, data.height/3*1.2, data.consumerColor)
     return [govValve, bankValve, foreignValve, domSpendingValve, consumptionValve]
 
 def initializeWalls(data):
@@ -457,13 +488,18 @@ def initializeWalls(data):
             wall17, wall18]
 
 def initializeLabels(data):
-    taxLabel=Label("Gov. Tax Income", data.newX/6, data.height/9)
-    gSpendingLabel=Label("Gov. Spending", data.newX/6, data.height/2)
-    consumptionLabel=Label("Consumer Spending", data.newX/2, data.height/6)
-    savingLabel=Label("Saving", data.newX*5/6, data.height/6)
-    investmentLabel=Label("Investment", data.newX*5/6, data.height*6/11)
-    importLabel=Label("Imports", data.newX*7/9, data.height*12/15)
-    exportLabel=Label("Exports", data.newX*7/10, data.height*22/25)
+    taxLabel=Label("Gov. Tax Income", data.newX/6, data.height/9, data.govColor)
+    gSpendingLabel=Label("Gov. Spending", data.newX/6, data.height/2, 
+                         data.govColor)
+    consumptionLabel=Label("Consumer Spending", data.newX/2, data.height/6, 
+                           data.consumerColor)
+    savingLabel=Label("Saving", data.newX*5/6, data.height/6, data.bankColor)
+    investmentLabel=Label("Investment", data.newX*5/6, data.height*6/11, 
+                          data.bankColor)
+    importLabel=Label("Imports", data.newX*7/9, data.height*4/5, 
+                      data.foreignColor)
+    exportLabel=Label("Exports", data.newX*7/10, data.height*22/25, 
+                      data.foreignColor)
     return [taxLabel, gSpendingLabel, consumptionLabel, savingLabel, 
             investmentLabel, importLabel, exportLabel]
 
@@ -472,8 +508,10 @@ def initializeStartButtons(data):
     bWidth=data.width/10
     bHeight=data.height/25
     xPos=data.width/2
-    baseGameButton=BaseGameButton("Base Game Button", xPos, data.height*5/11, bWidth, bHeight)
-    loopGameButton=LoopGameButton("Loop Game Button", xPos, data.height*7/11, bWidth, bHeight)
+    baseGameButton=BaseGameButton("Base Game Button", xPos, data.height*5/11, 
+                                  bWidth, bHeight, data.neutralColor)
+    loopGameButton=LoopGameButton("Loop Game Button", xPos, data.height*7/11, 
+                                  bWidth, bHeight, data.neutralColor)
     return [baseGameButton, loopGameButton]
 
 def initializeMainButtons(data):
@@ -481,39 +519,42 @@ def initializeMainButtons(data):
     bWidth=data.width/15
     bHeight=data.height/25
     xPos=data.width*8/9
-    pauseButton=PauseButton("Pause Button", xPos, data.height*3/11, bWidth, bHeight)
-    interestRateButton=VariableButton("Interest Rt", xPos, data.height*6/11,
-                              bWidth, bHeight, data.interestRate)
-    taxRateButton=VariableButton("Tax Rt", xPos, data.height*7/11, bWidth,
-                         bHeight, data.taxRate)
-    importRateButton=VariableButton("Import Rt", xPos, data.height*8/11,
-                            bWidth, bHeight, data.importRate)
-    exportRateButton=VariableButton("Export Rt", xPos, data.height*9/11,
-                            bWidth, bHeight, data.exportRate)
-    govSpendingButton=VariableButton("Gov. Spending Rt", xPos,
-                             data.height*10/11, bWidth, bHeight, 
-                             data.govSpendingRate)
-    graphButton=GraphButton("Graph Button", xPos, data.height*5/11, bWidth, bHeight)
-    return [pauseButton, interestRateButton, taxRateButton, importRateButton, 
-            exportRateButton, govSpendingButton, graphButton]
+    #Pause Button
+    pButton=PauseButton("Pause Button", xPos, data.height*3/11, bWidth, bHeight,
+                        data.neutralColor)
+    #Variable Buttons
+    iButton=VariableButton("Interest Rt", xPos, data.height*6/11, bWidth, 
+                           bHeight, data.bankColor, data.interestRate)
+    tButton=VariableButton("Tax Rt", xPos, data.height*7/11, bWidth, bHeight,
+                           data.govColor, data.taxRate)
+    mButton=VariableButton("Import Rt", xPos, data.height*8/11, bWidth, bHeight,
+                           data.foreignColor, data.importRate)
+    xButton=VariableButton("Export Rt", xPos, data.height*9/11,
+                           bWidth, bHeight, data.foreignColor, data.exportRate)
+    gButton=VariableButton("Gov. Spending Rt", xPos, data.height*10/11, bWidth,
+                           bHeight, data.govColor, data.govSpendingRate)
+    #Graph Button
+    graphButton=GraphButton("Graph Button", xPos, data.height*4/11, bWidth, 
+                            bHeight, data.neutralColor)
+    return [pButton, iButton, tButton, mButton, xButton, gButton, graphButton]
 
 ##Animation Framework
 def timerFired(data):
     if data.mode=="Base Game":
         if (not data.isPaused):
             baseDoStep(data)
-            releaseValves(data)
+            #releaseValves(data)
             data.timerFiredCount+=1
-            '''
+        
             if data.timerFiredCount%10==0:
                 releaseValves(data)
-            '''
+            
     elif data.mode=="Loop Game":
         if (not data.isPaused):
             loopDoStep(data)
-            releaseValves(data)
             data.timerFiredCount+=1
             if data.timerFiredCount%10==0:
+                releaseValves(data)
                 data.sand.extend(initializeConSand(data, data.fixedGDP)+
                                     initializeSavingSand(data, data.fixedGDP)+
                                     initializeGovSand(data, data.fixedGDP))
@@ -778,6 +819,9 @@ def mousePressed(event, data):
     if data.helpButton.isClicked(event.x, event.y):
         data.clickedButton=data.helpButton
         data.helpButton.runCommand(data)
+    if data.homeButton.isClicked(event.x, event.y):
+        data.clickedButton=data.homeButton
+        data.homeButton.runCommand(data)
         
 def keyPressed(event, data):
     if data.clickedButton!=None:
@@ -809,6 +853,7 @@ def keyPressed(event, data):
 
 def redrawAll(canvas, data):
     data.helpButton.draw(canvas)
+    data.homeButton.draw(canvas)
     if data.clickedButton==data.helpButton:
         data.helpButton.drawPage(canvas, data)
     else:
@@ -846,7 +891,7 @@ def redrawAll(canvas, data):
 def runGraph(data):
     # https://matplotlib.org/gallery/user_interfaces/embedding_in_tk_sgskip.html
     root = tkinter.Tk()
-    root.wm_title("Embedding in Tk")
+    root.wm_title("MONIAC Graphs")
     #style.use('fivethirtyeight')
     fig = Figure(figsize=(10, 8), dpi=100)
 
